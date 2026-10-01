@@ -1,7 +1,12 @@
+import contextvars
 import json
 import logging
 import sys
 from datetime import datetime, timezone
+
+request_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "request_id", default=None
+)
 
 
 class JSONFormatter(logging.Formatter):
@@ -14,6 +19,11 @@ class JSONFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+
+        # Automatically include active request_id from contextvar if available
+        req_id = request_id_ctx.get()
+        if req_id:
+            log_payload["request_id"] = req_id
 
         # Include standard exception information if present
         if record.exc_info:

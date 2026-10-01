@@ -1,16 +1,11 @@
 import asyncio
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="Simulated Inventory Service")
 
 DEFAULT_LATENCY_MS = float(os.getenv("DEFAULT_LATENCY_MS", "0"))
-
-
-class InventoryCheckRequest(BaseModel):
-    product_id: str
-    quantity: int = Field(gt=0)
 
 
 class InventoryCheckResponse(BaseModel):
@@ -19,20 +14,53 @@ class InventoryCheckResponse(BaseModel):
     stock: int
 
 
+class InventoryCheckRequest(BaseModel):
+    product_id: str
+    quantity: int = Field(gt=0)
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "inventory-service"}
 
 
-@app.post("/inventory/check", response_model=InventoryCheckResponse)
-async def check_inventory(payload: InventoryCheckRequest, latency_ms: float | None = None):
+@app.get("/inventory/{product_id}", response_model=InventoryCheckResponse)
+async def get_inventory(
+    product_id: str,
+    latency_ms: float | None = Query(default=None),
+):
+    """Check inventory for a product."""
     sleep_time_ms = latency_ms if latency_ms is not None else DEFAULT_LATENCY_MS
     if sleep_time_ms > 0:
         await asyncio.sleep(sleep_time_ms / 1000.0)
 
-    # In baseline M0/M1, all products have stock available
+    # Simulated downstream failure cases
+    if product_id.startswith("error-500"):
+        raise HTTPException(
+            status_code=500, detail="Downstream inventory internal error"
+        )
+
+    if product_id.startswith("timeout"):
+        # Induce deliberate timeout beyond standard 5s client timeout
+        await asyncio.sleep(10.0)
+
+    if product_id.startswith("unavailable") or product_id.startswith("out-of-stock"):
+        return InventoryCheckResponse(
+            product_id=product_id,
+            available=False,
+            stock=0,
+        )
+
     return InventoryCheckResponse(
-        product_id=payload.product_id,
+        product_id=product_id,
         available=True,
         stock=1000,
     )
+
+
+@app.post("/inventory/check", response_model=InventoryCheckResponse)
+async def check_inventory(
+    payload: InventoryCheckRequest, latency_ms: float | None = None
+):
+    """Backward-compatible endpoint for POST check."""
+    return await get_inventory(payload.product_id, latency_ms=latency_ms)
