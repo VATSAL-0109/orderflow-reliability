@@ -101,9 +101,54 @@ async def test_create_order_success(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_create_order_inventory_unavailable(async_client: AsyncClient):
+async def test_create_order_resource_lifecycle(async_client: AsyncClient):
+    """Verify that inventory check completes BEFORE DB connection is acquired, and connection is released."""
+    events = []
+
+    async def mock_check_inventory(product_id: str):
+        events.append("inventory_start")
+        # Ensure DB connection has NOT been acquired yet
+        assert "db_acquire_start" not in events
+        events.append("inventory_end")
+        return True
+
+    @asynccontextmanager
+    async def tracking_acquire_db_connection():
+        events.append("db_acquire_start")
+        # Ensure inventory check has already completed before acquiring connection
+        assert "inventory_end" in events
+        yield FakeAsyncConn(), 0.005
+        events.append("db_acquire_end")
+
+    fake_session = FakeAsyncSession()
     with patch(
-        "app.routes.orders.acquire_db_connection", fake_acquire_db_connection
+        "app.routes.orders.acquire_db_connection", tracking_acquire_db_connection
+    ), patch(
+        "app.routes.orders.AsyncSession", return_value=fake_session
+    ), patch(
+        "app.clients.inventory.InventoryClient.check_inventory",
+        side_effect=mock_check_inventory,
+    ):
+        response = await async_client.post(
+            "/orders",
+            json={"product_id": "laptop-001", "quantity": 1},
+        )
+        assert response.status_code == 201
+
+    # Verify strict temporal sequence
+    assert events == [
+        "inventory_start",
+        "inventory_end",
+        "db_acquire_start",
+        "db_acquire_end",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_create_order_inventory_unavailable(async_client: AsyncClient):
+    mock_db_acquire = AsyncMock()
+    with patch(
+        "app.routes.orders.acquire_db_connection", mock_db_acquire
     ), patch(
         "app.clients.inventory.InventoryClient.check_inventory",
         new_callable=AsyncMock,
@@ -115,12 +160,15 @@ async def test_create_order_inventory_unavailable(async_client: AsyncClient):
         )
         assert response.status_code == 409
         assert "unavailable" in response.json()["detail"].lower()
+        # Verify DB connection was NEVER acquired
+        assert mock_db_acquire.called is False
 
 
 @pytest.mark.asyncio
 async def test_create_order_inventory_timeout(async_client: AsyncClient):
+    mock_db_acquire = AsyncMock()
     with patch(
-        "app.routes.orders.acquire_db_connection", fake_acquire_db_connection
+        "app.routes.orders.acquire_db_connection", mock_db_acquire
     ), patch(
         "app.clients.inventory.InventoryClient.check_inventory",
         new_callable=AsyncMock,
@@ -132,12 +180,15 @@ async def test_create_order_inventory_timeout(async_client: AsyncClient):
         )
         assert response.status_code == 504
         assert "timed out" in response.json()["detail"].lower()
+        # Verify DB connection was NEVER acquired
+        assert mock_db_acquire.called is False
 
 
 @pytest.mark.asyncio
 async def test_create_order_inventory_downstream_error(async_client: AsyncClient):
+    mock_db_acquire = AsyncMock()
     with patch(
-        "app.routes.orders.acquire_db_connection", fake_acquire_db_connection
+        "app.routes.orders.acquire_db_connection", mock_db_acquire
     ), patch(
         "app.clients.inventory.InventoryClient.check_inventory",
         new_callable=AsyncMock,
@@ -149,6 +200,8 @@ async def test_create_order_inventory_downstream_error(async_client: AsyncClient
         )
         assert response.status_code == 502
         assert "downstream inventory error" in response.json()["detail"].lower()
+        # Verify DB connection was NEVER acquired
+        assert mock_db_acquire.called is False
 
 
 @pytest.mark.asyncio
