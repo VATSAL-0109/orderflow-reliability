@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.config import get_settings
-from app.database import engine
+from app.database import engine, update_db_pool_metrics
 from app.logging_config import request_id_ctx, setup_logging
 from app.metrics import (
     HTTP_ERRORS_TOTAL,
@@ -141,4 +141,5 @@ async def health_check() -> HealthResponse:
 @app.get("/metrics")
 async def metrics() -> Response:
     """Prometheus metrics scrape endpoint."""
+    update_db_pool_metrics()
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

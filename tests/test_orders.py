@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -45,6 +46,19 @@ class FakeAsyncSession:
         return mock_result
 
 
+class FakeAsyncConn:
+    """Mock database connection that can begin a transaction."""
+
+    @asynccontextmanager
+    async def begin(self):
+        yield self
+
+
+@asynccontextmanager
+async def fake_acquire_db_connection():
+    yield FakeAsyncConn(), 0.005
+
+
 @pytest.mark.asyncio
 async def test_health_check(async_client: AsyncClient):
     response = await async_client.get("/health")
@@ -65,7 +79,9 @@ async def test_metrics_endpoint(async_client: AsyncClient):
 async def test_create_order_success(async_client: AsyncClient):
     fake_session = FakeAsyncSession()
     with patch(
-        "app.routes.orders.AsyncSessionLocal", return_value=fake_session
+        "app.routes.orders.acquire_db_connection", fake_acquire_db_connection
+    ), patch(
+        "app.routes.orders.AsyncSession", return_value=fake_session
     ), patch(
         "app.clients.inventory.InventoryClient.check_inventory",
         new_callable=AsyncMock,
@@ -158,7 +174,11 @@ async def test_create_order_empty_product_id(async_client: AsyncClient):
 async def test_get_order_success(async_client: AsyncClient):
     existing_order = Order(id=10, product_id="keyboard-101", quantity=1, status="CONFIRMED")
     fake_session = FakeAsyncSession(execute_result=existing_order)
-    with patch("app.routes.orders.AsyncSessionLocal", return_value=fake_session):
+    with patch(
+        "app.routes.orders.acquire_db_connection", fake_acquire_db_connection
+    ), patch(
+        "app.routes.orders.AsyncSession", return_value=fake_session
+    ):
         response = await async_client.get("/orders/10")
         assert response.status_code == 200
         data = response.json()
@@ -171,7 +191,11 @@ async def test_get_order_success(async_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_get_order_not_found(async_client: AsyncClient):
     fake_session = FakeAsyncSession(execute_result=None)
-    with patch("app.routes.orders.AsyncSessionLocal", return_value=fake_session):
+    with patch(
+        "app.routes.orders.acquire_db_connection", fake_acquire_db_connection
+    ), patch(
+        "app.routes.orders.AsyncSession", return_value=fake_session
+    ):
         response = await async_client.get("/orders/999")
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
