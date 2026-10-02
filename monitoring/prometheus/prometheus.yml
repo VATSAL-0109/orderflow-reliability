@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+rule_files:
+  - "alerts.yml"
+
+scrape_configs:
+  - job_name: "orderflow-api"
+    static_configs:
+      - targets: ["api:8000"]
+    metrics_path: "/metrics"

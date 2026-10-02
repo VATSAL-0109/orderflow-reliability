@@ -2,6 +2,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 import logging
 import time
+from sqlalchemy import text
 from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.ext.asyncio import (
     AsyncConnection,
@@ -85,3 +86,10 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             yield session
         finally:
             await session.close()
+
+
+async def check_db_connectivity() -> bool:
+    """Lightweight connectivity ping for readiness checks."""
+    async with engine.connect() as conn:
+        await conn.execute(text("SELECT 1"))
+    return True

@@ -16,6 +16,7 @@ from app.database import acquire_db_connection
 from app.metrics import DB_OPERATION_DURATION_SECONDS
 from app.models import Order
 from app.schemas import OrderCreate, OrderResponse
+from app.tracing import tracer
 
 logger = logging.getLogger("orderflow.orders")
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -78,25 +79,30 @@ async def create_order(
 
     # Step 2: Acquire physical DB connection ONLY for the short DB operation
     try:
-        async with acquire_db_connection() as (conn, wait_seconds):
-            db_wait_ms = round(wait_seconds * 1000, 2)
+        with tracer.start_as_current_span("db.acquire_connection") as acq_span:
+            async with acquire_db_connection() as (conn, wait_seconds):
+                db_wait_ms = round(wait_seconds * 1000, 2)
+                acq_span.set_attribute("db.wait_ms", db_wait_ms)
 
-            # Step 3: Execute DB operations within transaction using the acquired connection
-            t_exec_start = time.perf_counter()
-            async with conn.begin():
-                async with AsyncSession(bind=conn, expire_on_commit=False) as session:
-                    order = Order(
-                        product_id=payload.product_id,
-                        quantity=payload.quantity,
-                        status="CONFIRMED",
-                    )
-                    session.add(order)
-                    await session.flush()
-                    order_data = OrderResponse.model_validate(order)
-            db_exec_ms = round((time.perf_counter() - t_exec_start) * 1000, 2)
-            DB_OPERATION_DURATION_SECONDS.labels(operation="create_order").observe(
-                db_exec_ms / 1000.0
-            )
+                # Step 3: Execute DB operations within transaction using the acquired connection
+                t_exec_start = time.perf_counter()
+                with tracer.start_as_current_span("db.execute_transaction") as tx_span:
+                    async with conn.begin():
+                        async with AsyncSession(bind=conn, expire_on_commit=False) as session:
+                            order = Order(
+                                product_id=payload.product_id,
+                                quantity=payload.quantity,
+                                status="CONFIRMED",
+                            )
+                            session.add(order)
+                            await session.flush()
+                            order_data = OrderResponse.model_validate(order)
+                    db_exec_ms = round((time.perf_counter() - t_exec_start) * 1000, 2)
+                    tx_span.set_attribute("db.exec_ms", db_exec_ms)
+                    tx_span.set_attribute("order.id", order_data.id)
+                DB_OPERATION_DURATION_SECONDS.labels(operation="create_order").observe(
+                    db_exec_ms / 1000.0
+                )
 
     except SQLAlchemyTimeoutError as exc:
         raise HTTPException(

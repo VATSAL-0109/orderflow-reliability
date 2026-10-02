@@ -25,6 +25,17 @@ class JSONFormatter(logging.Formatter):
         if req_id:
             log_payload["request_id"] = req_id
 
+        # Automatically correlate with active OpenTelemetry trace context if available
+        try:
+            from opentelemetry import trace
+            span = trace.get_current_span()
+            if span and span.get_span_context().is_valid:
+                ctx = span.get_span_context()
+                log_payload["trace_id"] = format(ctx.trace_id, "032x")
+                log_payload["span_id"] = format(ctx.span_id, "016x")
+        except Exception:
+            pass
+
         # Include standard exception information if present
         if record.exc_info:
             log_payload["exception"] = self.formatException(record.exc_info)

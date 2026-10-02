@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     INVENTORY_SERVICE_URL: str = "http://localhost:8001"
     INVENTORY_TIMEOUT_SECONDS: float = 5.0
 
+    # OpenTelemetry Distributed Tracing Configuration
+    OTEL_EXPORTER_OTLP_ENDPOINT: str | None = None
+    OTEL_SERVICE_NAME: str = "orderflow-api"
+    TRACING_ENABLED: bool = True
+
 
 @lru_cache()
 def get_settings() -> Settings:

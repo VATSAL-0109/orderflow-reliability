@@ -1,0 +1,248 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Service Health & Traffic Overview",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisCenteredZero": false, "axisColorMode": "text", "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 15 },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "id": 1,
+      "title": "A. HTTP Request Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[1m])) by (method, endpoint, status)",
+          "legendFormat": "{{method}} {{endpoint}} [{{status}}]",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "red" },
+          "custom": { "axisCenteredZero": false, "axisColorMode": "text", "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 25 },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "id": 2,
+      "title": "B. HTTP 5xx / Error Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[1m])) by (endpoint, status)",
+          "legendFormat": "{{endpoint}} [{{status}}]",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisCenteredZero": false, "axisColorMode": "text", "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 15 },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "id": 3,
+      "title": "C. HTTP Request Latency (Avg)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(http_request_duration_seconds_sum[1m])) by (endpoint) / sum(rate(http_request_duration_seconds_count[1m])) by (endpoint)",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "id": 101,
+      "title": "Database Connection Pool Health (Contention Diagnosis)",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "orange" },
+          "custom": { "axisCenteredZero": false, "axisColorMode": "text", "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 20 },
+          "unit": "s"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Threshold 500ms" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "id": 4,
+      "title": "D. DB Connection Wait Time (Avg)",
+      "description": "Time spent waiting in the queue to acquire a physical DB connection. High wait indicates pool saturation.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(db_connection_wait_seconds_sum[1m]) / rate(db_connection_wait_seconds_count[1m])",
+          "legendFormat": "Avg Wait Time",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "red" },
+          "custom": { "axisCenteredZero": false, "axisColorMode": "text", "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 80 },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "id": 5,
+      "title": "H. DB Pool Timeout Rate & Total Timeouts",
+      "description": "Increments whenever a request exceeds the pool checkout timeout (raising HTTP 503).",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "increase(db_pool_timeouts_total[1m])",
+          "legendFormat": "Timeouts in last 1m",
+          "refId": "A"
+        },
+        {
+          "expr": "db_pool_timeouts_total",
+          "legendFormat": "Cumulative Timeouts",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisCenteredZero": false, "axisColorMode": "text", "drawStyle": "line", "lineInterpolation": "stepAfter", "lineWidth": 2, "fillOpacity": 20 },
+          "unit": "none",
+          "min": 0,
+          "max": 5
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
+      "id": 6,
+      "title": "E, F, G. DB Pool Connections Status (Checked Out vs Available vs Overflow)",
+      "description": "Live pool state: capacity = 5 connections. Shows when all 5 connections are checked out simultaneously.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "db_pool_checked_out_connections",
+          "legendFormat": "E. Checked Out",
+          "refId": "A"
+        },
+        {
+          "expr": "db_pool_available_connections",
+          "legendFormat": "F. Available (Idle)",
+          "refId": "B"
+        },
+        {
+          "expr": "db_pool_overflow_connections",
+          "legendFormat": "G. Overflow",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "id": 102,
+      "title": "Downstream vs Internal Subsystem Latency (Diagnostic Root-Cause Isolation)",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisCenteredZero": false, "axisColorMode": "text", "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 15 },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+      "id": 7,
+      "title": "I. Downstream Inventory Latency (Scenario B Detector)",
+      "description": "Roundtrip HTTP duration to external Inventory service. Spikes here indicate downstream slowness.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(inventory_request_duration_seconds_sum[1m])) by (status) / sum(rate(inventory_request_duration_seconds_count[1m])) by (status)",
+          "legendFormat": "Inventory Latency ({{status}})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisCenteredZero": false, "axisColorMode": "text", "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 15 },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
+      "id": 8,
+      "title": "J. DB Operation Duration (Scenario A Detector)",
+      "description": "SQL transaction duration (INSERT + COMMIT) after connection acquisition. Spikes here indicate slow SQL queries.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(db_operation_duration_seconds_sum[1m])) by (operation) / sum(rate(db_operation_duration_seconds_count[1m])) by (operation)",
+          "legendFormat": "DB Exec: {{operation}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["orderflow", "reliability", "observability"],
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m"] },
+  "timezone": "browser",
+  "title": "OrderFlow Reliability Dashboard",
+  "uid": "orderflow-reliability",
+  "version": 1
+}

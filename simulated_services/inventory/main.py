@@ -7,6 +7,28 @@ app = FastAPI(title="Simulated Inventory Service")
 
 DEFAULT_LATENCY_MS = float(os.getenv("DEFAULT_LATENCY_MS", "0"))
 
+# OpenTelemetry distributed tracing setup
+otel_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+if otel_endpoint:
+    try:
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+        service_name = os.getenv("OTEL_SERVICE_NAME", "inventory-service")
+        resource = Resource.create({"service.name": service_name})
+        provider = TracerProvider(resource=resource)
+        exporter = OTLPSpanExporter(endpoint=f"{otel_endpoint.rstrip('/')}/v1/traces")
+        provider.add_span_processor(BatchSpanProcessor(exporter))
+        trace.set_tracer_provider(provider)
+        FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
+    except Exception as e:
+        import sys
+        print(f"Failed to initialize tracing in inventory service: {e}", file=sys.stderr)
+
 
 class InventoryCheckResponse(BaseModel):
     product_id: str

@@ -1,0 +1,38 @@
+groups:
+  - name: orderflow_alerts
+    rules:
+      - alert: DBPoolCheckoutTimeouts
+        expr: increase(db_pool_timeouts_total[1m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database connection pool checkout timeouts detected"
+          description: "OrderFlow API has experienced {{ $value }} DB pool checkout timeouts in the last minute. Client requests are failing with HTTP 503."
+
+      - alert: DBConnectionWaitHigh
+        expr: rate(db_connection_wait_seconds_sum[1m]) / rate(db_connection_wait_seconds_count[1m]) > 0.5
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated database connection wait time"
+          description: "Average duration waiting to check out a DB connection exceeds 500ms (currently {{ $value | printf \"%.2f\" }}s). Indicates connection pool saturation."
+
+      - alert: HighHTTP5xxRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[1m])) / sum(rate(http_requests_total[1m])) > 0.05
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High HTTP 5xx error rate"
+          description: "Over 5% of HTTP requests to OrderFlow are failing with 5xx status codes."
+
+      - alert: InventoryLatencyHigh
+        expr: rate(inventory_request_duration_seconds_sum{status="success"}[1m]) / rate(inventory_request_duration_seconds_count{status="success"}[1m]) > 1.5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Downstream inventory latency is elevated"
+          description: "Average downstream inventory response time exceeds 1.5s (currently {{ $value | printf \"%.2f\" }}s)."

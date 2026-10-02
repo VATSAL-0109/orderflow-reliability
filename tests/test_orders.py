@@ -69,6 +69,25 @@ async def test_health_check(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_readiness_check_success(async_client: AsyncClient):
+    with patch("app.main.check_db_connectivity", new_callable=AsyncMock) as mock_check:
+        mock_check.return_value = True
+        response = await async_client.get("/ready")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ready"
+        assert data["database"] == "connected"
+
+
+@pytest.mark.asyncio
+async def test_readiness_check_failure(async_client: AsyncClient):
+    with patch("app.main.check_db_connectivity", side_effect=Exception("Database connection refused")):
+        response = await async_client.get("/ready")
+        assert response.status_code == 503
+        assert "database unavailable" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
 async def test_metrics_endpoint(async_client: AsyncClient):
     response = await async_client.get("/metrics")
     assert response.status_code == 200

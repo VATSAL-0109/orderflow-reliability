@@ -4,11 +4,11 @@ import time
 import uuid
 from collections.abc import AsyncGenerator
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.config import get_settings
-from app.database import engine, update_db_pool_metrics
+from app.database import check_db_connectivity, engine, update_db_pool_metrics
 from app.logging_config import request_id_ctx, setup_logging
 from app.metrics import (
     HTTP_ERRORS_TOTAL,
@@ -18,9 +18,17 @@ from app.metrics import (
 from app.models import Base
 from app.routes.orders import router as orders_router
 from app.schemas import HealthResponse
+from app.tracing import instrument_app, setup_tracing
 
 settings = get_settings()
 logger = logging.getLogger("orderflow.api")
+
+# Initialize OpenTelemetry tracer provider and HTTPX instrumentation
+setup_tracing(
+    service_name=settings.OTEL_SERVICE_NAME,
+    otlp_endpoint=settings.OTEL_EXPORTER_OTLP_ENDPOINT,
+    enabled=settings.TRACING_ENABLED,
+)
 
 
 @asynccontextmanager
@@ -55,6 +63,9 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url=None,
 )
+
+# Instrument FastAPI application with OpenTelemetry
+instrument_app(app)
 
 
 @app.middleware("http")
@@ -136,6 +147,20 @@ app.include_router(orders_router)
 async def health_check() -> HealthResponse:
     """Liveness probe endpoint."""
     return HealthResponse(status="healthy", service=settings.APP_NAME)
+
+
+@app.get("/ready")
+async def readiness_check():
+    """Readiness probe endpoint verifying database connectivity."""
+    try:
+        await check_db_connectivity()
+        return {"status": "ready", "database": "connected"}
+    except Exception as exc:
+        logger.warning("Readiness probe failed: database unavailable", extra={"error": str(exc)})
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unavailable",
+        )
 
 
 @app.get("/metrics")
