@@ -7,7 +7,7 @@ def test_settings_defaults():
     settings = Settings()
     assert settings.APP_NAME == "OrderFlow"
     assert settings.DB_POOL_SIZE == 5
-    assert settings.DB_MAX_OVERFLOW == 10
+    assert settings.DB_MAX_OVERFLOW == 0
 
 
 def test_order_schema_validation():

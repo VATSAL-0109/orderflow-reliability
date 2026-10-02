@@ -103,6 +103,8 @@ async def test_create_order_success(async_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_create_order_inventory_unavailable(async_client: AsyncClient):
     with patch(
+        "app.routes.orders.acquire_db_connection", fake_acquire_db_connection
+    ), patch(
         "app.clients.inventory.InventoryClient.check_inventory",
         new_callable=AsyncMock,
         side_effect=InventoryUnavailableError("Product 'laptop-001' is unavailable in inventory"),
@@ -118,6 +120,8 @@ async def test_create_order_inventory_unavailable(async_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_create_order_inventory_timeout(async_client: AsyncClient):
     with patch(
+        "app.routes.orders.acquire_db_connection", fake_acquire_db_connection
+    ), patch(
         "app.clients.inventory.InventoryClient.check_inventory",
         new_callable=AsyncMock,
         side_effect=InventoryTimeoutError("Inventory service timed out"),
@@ -133,6 +137,8 @@ async def test_create_order_inventory_timeout(async_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_create_order_inventory_downstream_error(async_client: AsyncClient):
     with patch(
+        "app.routes.orders.acquire_db_connection", fake_acquire_db_connection
+    ), patch(
         "app.clients.inventory.InventoryClient.check_inventory",
         new_callable=AsyncMock,
         side_effect=InventoryDownstreamError(500, "Internal Server Error"),

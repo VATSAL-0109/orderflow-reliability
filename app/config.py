@@ -22,8 +22,8 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://postgres:postgres@localhost:5432/orderflow"
     )
     DB_POOL_SIZE: int = 5
-    DB_MAX_OVERFLOW: int = 10
-    DB_POOL_TIMEOUT: float = 30.0
+    DB_MAX_OVERFLOW: int = 0
+    DB_POOL_TIMEOUT: float = 3.0
 
     # Downstream Inventory Service Configuration
     INVENTORY_SERVICE_URL: str = "http://localhost:8001"

@@ -41,11 +41,16 @@ async def create_order(
     payload: OrderCreate,
     inventory_client: InventoryClient = Depends(get_inventory_client),
 ) -> OrderResponse:
-    """Healthy Order creation flow with separated connection wait and execution instrumentation:
+    """Order creation flow (M3: Deliberate failure scenario).
 
-    1. Check inventory availability via external HTTP call (NO DB connection held).
-    2. After inventory succeeds, explicitly acquire physical DB connection from pool.
-    3. Execute DB transaction / insert and flush on the acquired connection.
+    RESOURCE LIFECYCLE DEFECT:
+    A physical database connection is acquired FIRST and held open across the slow
+    downstream inventory HTTP call.
+
+    Lifecycle:
+    1. Acquire physical DB connection from pool (measures wait time).
+    2. Call downstream Inventory service WHILE HOLDING the physical DB connection.
+    3. Execute DB transaction / insert and flush on the held connection.
     4. Commit and release physical DB connection back to pool.
     5. Return created order with stage timings logged.
     """
@@ -55,33 +60,34 @@ async def create_order(
         extra={"product_id": payload.product_id, "quantity": payload.quantity},
     )
 
-    # Step 1: Check downstream inventory FIRST (no DB connection held)
-    t_inv_start = time.perf_counter()
-    try:
-        await inventory_client.check_inventory(payload.product_id)
-    except InventoryUnavailableError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
-        ) from exc
-    except InventoryTimeoutError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Downstream inventory service timed out",
-        ) from exc
-    except InventoryDownstreamError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Downstream inventory error: {str(exc)}",
-        ) from exc
-    inventory_ms = round((time.perf_counter() - t_inv_start) * 1000, 2)
-
-    # Step 2: Explicitly acquire physical DB connection from pool (measures wait time)
+    # DELIBERATE FAILURE INTRODUCED IN M3:
+    # Acquire physical DB connection FIRST, holding it across the slow downstream network call
     try:
         async with acquire_db_connection() as (conn, wait_seconds):
             db_wait_ms = round(wait_seconds * 1000, 2)
 
-            # Step 3: Execute DB operations within transaction using acquired connection
+            # Step 1: Call downstream Inventory service WHILE HOLDING THE DB CONNECTION
+            t_inv_start = time.perf_counter()
+            try:
+                await inventory_client.check_inventory(payload.product_id)
+            except InventoryUnavailableError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=str(exc),
+                ) from exc
+            except InventoryTimeoutError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail="Downstream inventory service timed out",
+                ) from exc
+            except InventoryDownstreamError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Downstream inventory error: {str(exc)}",
+                ) from exc
+            inventory_ms = round((time.perf_counter() - t_inv_start) * 1000, 2)
+
+            # Step 2: Execute DB operations within transaction using the held connection
             t_exec_start = time.perf_counter()
             async with conn.begin():
                 async with AsyncSession(bind=conn, expire_on_commit=False) as session:
